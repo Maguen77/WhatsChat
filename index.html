@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chat</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+:root{--surface:#FFF8EE;--accent:#FF8C42;--accent-soft:#FFD9A0}
+body{margin:0;background:#FFF8EE;font-family:Segoe UI,Arial}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px}
+h1{font-size:28px;margin:8px 0 24px}
+input{width:100%;padding:16px;font-size:19px;border:2px solid #ddd;border-radius:14px;margin-bottom:14px;color:#1A1A1A;background:#fff;box-sizing:border-box}
+button{width:100%;padding:16px;font-size:19px;font-weight:700;border:0;border-radius:14px;cursor:pointer;margin-bottom:12px}
+.btn1{background:#FF8C42;color:#fff}.btn2{background:#fff;border:2px solid #ddd;color:#1A1A1A}
+.top{display:flex;gap:10px;align-items:center;padding:12px 16px;background:#fff;border-bottom:1px solid #eee;position:sticky;top:0}
+.top b{flex:1;font-size:21px}.top button{width:auto;padding:10px 14px;font-size:16px;margin:0}
+#msgs{padding:16px;display:flex;flex-direction:column;gap:10px;min-height:50vh}
+.b{max-width:82%;padding:12px 14px;border-radius:16px;background:#fff;border:1px solid #eee}
+.b.me{align-self:flex-end;background:#FFD9A0;border-color:#FFD9A0}.b small{display:block;font-size:14px;opacity:.7;margin-top:4px}
+.send{display:flex;gap:10px;padding:12px;background:#fff;position:sticky;bottom:0;border-top:1px solid #eee}
+.send input{margin:0}.send button{width:110px;margin:0;background:#FF8C42;color:#fff}
+.hidden{display:none}
+#erro{color:#c00;font-size:14px;margin-bottom:10px}
+</style></head><body>
+<div id="home" class="wrap">
+<h1>Chat</h1><div id="erro"></div>
+<button class="btn1" onclick="mostrar('create')">Criar sala</button>
+<button class="btn2" onclick="mostrar('join')">Entrar com link</button>
+<div id="create" class="hidden"><input id="cChat" placeholder="Nome do chat"><input id="cNome" placeholder="Seu nome" maxlength="20"><button class="btn1" onclick="criar()">Criar</button></div>
+<div id="join" class="hidden"><input id="jSala" placeholder="Código da sala" style="text-transform:uppercase"><input id="jNome" placeholder="Seu nome" maxlength="20"><button class="btn1" onclick="entrar()">Entrar</button></div>
+</div>
+<div id="chat" class="hidden">
+<div class="top"><b id="chatName"></b><button id="btnCopy" onclick="copiar()">Criar link</button><button onclick="sair()">Sair</button></div><div id="linkBox" style="display:none">Link: <span id="linkText"></span><br><small>Segura e copia o link acima</small></div>
+<div id="msgs"></div>
+<div class="send"><input id="txt" placeholder="Digite..." maxlength="500" onkeydown="if(event.key==='Enter')enviar()"><button onclick="enviar()">Enviar</button></div>
+</div>
+<script>
+const firebaseConfig={apiKey:"AIzaSyAzgOooju3Ylf34I8aZ4TfKDwWqrpQAKsM",authDomain:"what-schat-b0120.firebaseapp.com",databaseURL:"https://what-schat-b0120-default-rtdb.firebaseio.com",projectId:"what-schat-b0120",storageBucket:"what-schat-b0120.firebasestorage.app",messagingSenderId:"576461423099",appId:"1:576461423099:web:c676b740b692e647660b5e"};
+firebase.initializeApp(firebaseConfig);
+const db=firebase.database();
+let sala="", meuNome="", nomeChat="", listener=null;
+function mostrar(q){document.getElementById("create").classList.toggle("hidden",q!=="create");document.getElementById("join").classList.toggle("hidden",q!=="join");}
+function erro(m){document.getElementById("erro").textContent=m;}
+function codigo(){return Math.random().toString(36).slice(2,8).toUpperCase();}
+function abrirChat(){
+  document.getElementById("home").classList.add("hidden");
+  document.getElementById("chat").classList.remove("hidden");
+  document.getElementById("chatName").textContent=nomeChat;
+  try{history.replaceState(null,"","?sala="+sala+"&chat="+encodeURIComponent(nomeChat));}catch(e){}
+  // escuta em tempo real
+  if(listener) listener.off();
+  document.getElementById("msgs").innerHTML="";
+  listener=db.ref("salas/"+sala+"/mensagens").limitToLast(100);
+  listener.on("child_added",snap=>{const d=snap.val();const el=document.createElement("div");el.className="b"+(d.nome===meuNome?" me":"");el.innerHTML=`<b>${d.nome}</b><div>${d.texto}</div><small>${d.hora}</small>`;document.getElementById("msgs").appendChild(el);window.scrollTo(0,document.body.scrollHeight);},err=>{erro("Erro ao ler: "+err.message);});
+}
+function criar(){
+  const chat=document.getElementById("cChat").value.trim();
+  const nome=document.getElementById("cNome").value.trim();
+  if(!chat||!nome){erro("Preenche nome do chat e teu nome");return;}
+  sala=codigo(); meuNome=nome; nomeChat=chat;
+  db.ref("salas/"+sala).set({nome:chat,criado:Date.now()}).then(abrirChat).catch(e=>erro("Erro ao criar: "+e.message));
+}
+function entrar(){
+  const cod=document.getElementById("jSala").value.trim().toUpperCase();
+  const nome=document.getElementById("jNome").value.trim();
+  if(!cod||!nome){erro("Preenche código e teu nome");return;}
+  db.ref("salas/"+cod).once("value").then(s=>{
+    if(!s.exists()){erro("Sala não encontrada. Confere o código.");return;}
+    sala=cod; meuNome=nome; nomeChat=s.val().nome||"Chat";
+    abrirChat();
+  }).catch(e=>erro("Erro ao entrar: "+e.message));
+}
+function enviar(){
+  const inp=document.getElementById("txt");const t=inp.value.trim();if(!t||!sala)return;
+  const hora=new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+  db.ref("salas/"+sala+"/mensagens").push({nome:meuNome,texto:t,hora:hora,timestamp:Date.now()}).catch(e=>{erro("Erro ao enviar: "+e.message);});
+  inp.value=""; inp.focus();
+}
+function copiar(){
+  const link=location.origin+location.pathname+"?sala="+sala+"&chat="+encodeURIComponent(nomeChat);
+  const b=document.getElementById("btnCopy");
+  function ok(){b.textContent="Link copiado!";setTimeout(()=>b.textContent="Criar link",1500);}
+  function fallback(){
+    const ta=document.createElement("textarea");ta.value=link;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy");ok();}catch(e){prompt("Copia o link:",link);}
+    document.body.removeChild(ta);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){navigator.clipboard.writeText(link).then(ok).catch(fallback);}else{fallback();}
+}
+function mostrarLink(){const link=location.origin+location.pathname+"?sala="+sala+"&chat="+encodeURIComponent(nomeChat);document.getElementById("linkBox").style.display="block"; document.getElementById("linkText").textContent="Gerando...";document.getElementById("linkText").textContent=link;}
+function sair(){if(listener)listener.off();try{history.replaceState(null,"",location.pathname);}catch(e){}sala="";document.getElementById("chat").classList.add("hidden");document.getElementById("home").classList.remove("hidden");document.getElementById("msgs").innerHTML="";}
+// auto-entrar via link
+(function(){
+  try{
+    const p=new URLSearchParams(location.search);const s=p.get("sala");const c=p.get("chat");
+    if(s){document.getElementById("jSala").value=s.toUpperCase();mostrar("join");if(c)document.getElementById("chatName").textContent=c;setTimeout(()=>document.getElementById("jNome").focus(),100);}
+  }catch(e){}
+})();
+</script></body></html>
